@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentFlow AI - Demo Embed Page</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;700&display=swap">
+  <style>
+    :root {
+      --bg: #09090b;
+      --card: rgba(20, 20, 25, 0.4);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --primary: #6366f1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      padding: 2rem;
+    }
+
+    /* Blur shapes */
+    body::before {
+      content: '';
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+      top: -100px;
+      left: -100px;
+      z-index: -1;
+    }
+
+    body::after {
+      content: '';
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
+      bottom: -100px;
+      right: -100px;
+      z-index: -1;
+    }
+
+    .container {
+      max-width: 650px;
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3rem 2rem;
+      text-align: center;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #ffffff 30%, #a1a1aa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: 30px;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 2rem;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #10b981;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.6; }
+    }
+
+    .btn-dashboard {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+      text-decoration: none;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn-dashboard:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .instructions {
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-align: left;
+    }
+
+    .instructions code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--primary);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div id="status-area">
+      <div class="status-badge">
+        <div class="pulse-dot"></div>
+        <span id="status-text">Detecting Chatbot...</span>
+      </div>
+    </div>
+
+    <h1>Simulated Client Site</h1>
+    <p>
+      This is a mockup representing an external business webpage (e.g. a restaurant, real estate agency, or grocery shop) hosting your chatbot widget. Feel free to explore the floating widget panel in the bottom-right corner.
+    </p>
+
+    <a href="/" class="btn-dashboard">
+      ← Return to Admin Panel
+    </a>
+
+    <div class="instructions">
+      <strong>How this works:</strong>
+      <ol style="margin-left: 1.25rem; margin-top: 0.5rem; display: flex; flex-direction: column; gap: 6px;">
+        <li>This page reads the <code>?botId=YOUR_BOT_ID</code> parameter from the URL.</li>
+        <li>It dynamically constructs and appends the <code>widget.js</code> script.</li>
+        <li>To test a different bot, configure it in the dashboard and click its <strong>Test Demo Page</strong> link.</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    // Extract botId from URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const botId = urlParams.get('botId');
+    const statusText = document.getElementById('status-text');
+
+    if (botId) {
+      statusText.textContent = `Chatbot (${botId}) Loaded`;
+      
+      // Dynamically inject the chat widget script
+      const script = document.createElement('script');
+      script.src = '/widget.js';
+      script.setAttribute('data-chatbot-id', botId);
+      script.async = true;
+      document.body.appendChild(script);
+      
+      script.onload = () => {
+        console.log('Chatbot widget script loaded successfully.');
+      };
+      script.onerror = () => {
+        statusText.textContent = 'Failed to load widget script';
+        statusText.style.color = '#f43f5e';
+        const dot = document.querySelector('.pulse-dot');
+        if (dot) dot.style.backgroundColor = '#f43f5e';
+      };
+    } else {
+      statusText.textContent = 'No Chatbot ID Detected';
+      statusText.style.color = '#f59e0b';
+      const dot = document.querySelector('.pulse-dot');
+      if (dot) dot.style.backgroundColor = '#f59e0b';
+      
+      // Update instructions
+      const statusArea = document.getElementById('status-area');
+      const alertDiv = document.createElement('div');
+      alertDiv.style.marginTop = '1rem';
+      alertDiv.style.fontSize = '0.9rem';
+      alertDiv.style.color = '#fbbf24';
+      alertDiv.textContent = 'Please go back to the Admin Panel, select a chatbot, go to "Get Embed Code" and click "Test Demo Page".';
+      statusArea.appendChild(alertDiv);
+    }
+  </script>
+
+</body>
+</html>
