@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
-import { saveDocument, saveChunks, getChatbot } from '@/lib/db';
+import { saveDocument, saveChunks, getChatbot, getDocuments, deleteDocument } from '@/lib/db';
 import { getEmbedding } from '@/lib/gemini';
 import { chunkText } from '@/lib/utils';
 
@@ -116,7 +116,14 @@ export async function POST(request) {
       if (scraped && scraped.text.length > 50) {
         pagesCrawled.push({ url: currentUrl, title: scraped.title });
         
-        // Save the document metadata
+        // Check if this URL was already crawled for this bot, if so, delete the old document to prevent duplicate/outdated chunks
+        const existingDocs = getDocuments(chatbotId);
+        const duplicateDoc = existingDocs.find(d => d.source === currentUrl);
+        if (duplicateDoc) {
+          deleteDocument(duplicateDoc.id);
+        }
+
+        // Save the new document metadata
         const documentId = 'doc_' + generateId();
         saveDocument({
           id: documentId,
