@@ -183,7 +183,10 @@ ${chatbot.whatsappNumber ? `8. WHATSAPP CONFIRMATION CTA: Since a WhatsApp numbe
    - If speaking in Roman Urdu: "WhatsApp par order confirm karne ke liye niche diye gaye link par click karain:\n👉 [WHATSAPP_LINK]"
    - If speaking in Urdu script: "واٹس ایپ پر آرڈر کی تصدیق کے لیے نیچے دیے گئے لنک پر کلک کریں:\n👉 [WHATSAPP_LINK]"
    - If speaking in English: "To confirm your order on WhatsApp, please click the link below:\n👉 [WHATSAPP_LINK]"` : ''}
-
+9. CONCISENESS & RELEVANCE (CRITICAL):
+   - Answer EXACTLY what the user asked. DO NOT dump all product details, full descriptions, or extra information unless specifically requested.
+   - For example, if the user asks "Is Sunaina 3pc available?", just say "Yes, it is available." Do not list the price, fabric, and delivery time unless they ask for it.
+   - Keep your responses short, conversational, and human-like to avoid sounding like an AI copy-pasting data.
 `;
 
   // Format history for Google Gen AI SDK
