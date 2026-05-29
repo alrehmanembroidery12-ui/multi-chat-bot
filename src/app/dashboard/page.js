@@ -3578,6 +3578,9 @@ function CreationWizard({
   const [wizardSessionId, setWizardSessionId] = useState('');
   const [wizardApiKey, setWizardApiKey] = useState('');
   const [isSavingApi, setIsSavingApi] = useState(false);
+  const [crawlUrl, setCrawlUrl] = useState('');
+  const [crawlDepth, setCrawlDepth] = useState(1);
+  const [isCrawling, setIsCrawling] = useState(false);
   const chatEndRef = useRef(null);
 
   const handleSaveWizardApi = async (e) => {
@@ -3630,7 +3633,7 @@ function CreationWizard({
     });
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (wizardStep === 1 && !selectedTemplate) {
       showNotification('warning', 'Please select a template to continue');
       return;
@@ -3644,7 +3647,46 @@ function CreationWizard({
         showNotification('warning', 'Please define the bot role/persona');
         return;
       }
-      // Initialize playground messages with welcome message
+      
+      setIsSubmitting(true);
+      let formattedWhatsapp = '';
+      if (wizardForm.whatsappNumberBody) {
+        formattedWhatsapp = (wizardForm.whatsappCountryCode + wizardForm.whatsappNumberBody).replace(/\\D/g, '');
+      }
+
+      const payload = {
+        name: wizardForm.name,
+        role: wizardForm.role,
+        systemPrompt: wizardForm.systemPrompt,
+        welcomeMessage: wizardForm.welcomeMessage,
+        themeColor: wizardForm.themeColor,
+        whatsappNumber: formattedWhatsapp
+      };
+
+      try {
+        const res = await fetch('/api/chatbots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          setCreatedBot(data.chatbot);
+          fetchChatbots();
+          setWizardStep(3);
+        } else {
+          showNotification('error', data.error || 'Failed to save chatbot');
+        }
+      } catch (err) {
+        showNotification('error', 'Network error creating chatbot');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+    
+    if (wizardStep === 3) {
+      // Transition from Train to Review
       setWizardChatMessages([
         { role: 'assistant', content: wizardForm.welcomeMessage || 'Hello! How can I help you today?' }
       ]);
@@ -3685,15 +3727,7 @@ function CreationWizard({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chatbotId: 'preview',
-          tempChatbot: {
-            name: wizardForm.name,
-            role: wizardForm.role,
-            systemPrompt: wizardForm.systemPrompt,
-            welcomeMessage: wizardForm.welcomeMessage,
-            themeColor: wizardForm.themeColor,
-            whatsappNumber: formattedWhatsapp
-          },
+          chatbotId: createdBot.id,
           message: userMsg.content,
           history: apiHistory
         })
@@ -3720,41 +3754,35 @@ function CreationWizard({
     }
   };
 
-  const handleSubmitBot = async () => {
-    setIsSubmitting(true);
-    let formattedWhatsapp = '';
-    if (wizardForm.whatsappNumberBody) {
-      formattedWhatsapp = (wizardForm.whatsappCountryCode + wizardForm.whatsappNumberBody).replace(/\D/g, '');
+  const handleWizardCrawl = async (e) => {
+    e.preventDefault();
+    if (!crawlUrl) return;
+    if (!createdBot) {
+      showNotification('error', 'Bot not created yet.');
+      return;
     }
 
-    const payload = {
-      name: wizardForm.name,
-      role: wizardForm.role,
-      systemPrompt: wizardForm.systemPrompt,
-      welcomeMessage: wizardForm.welcomeMessage,
-      themeColor: wizardForm.themeColor,
-      whatsappNumber: formattedWhatsapp
-    };
+    setIsCrawling(true);
+    showNotification('info', 'Starting website crawl. This may take a minute...');
 
     try {
-      const res = await fetch('/api/chatbots', {
+      const res = await fetch('/api/train/crawl', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ chatbotId: createdBot.id, url: crawlUrl, maxPages: crawlDepth === 0 ? 1 : 10 })
       });
+      
       const data = await res.json();
       if (data.success) {
-        setCreatedBot(data.chatbot);
-        setWizardStep(4);
-        fetchChatbots();
-        showNotification('success', `Chatbot "${wizardForm.name}" launched successfully!`);
+        showNotification('success', `Scraped & trained ${data.pagesCrawled.length} pages. Created ${data.chunksCount} memory blocks.`);
+        handleNext(); // Automatically go to Review & Test once done
       } else {
-        showNotification('error', data.error || 'Failed to save chatbot');
+        showNotification('error', data.error || 'Failed to crawl website');
       }
     } catch (err) {
-      showNotification('error', 'Network error creating chatbot');
+      showNotification('error', 'Network error during scraping');
     } finally {
-      setIsSubmitting(false);
+      setIsCrawling(false);
     }
   };
 
@@ -3776,8 +3804,9 @@ function CreationWizard({
   const steps = [
     { number: 1, label: 'Choose Template' },
     { number: 2, label: 'Customize' },
-    { number: 3, label: 'Review & Test' },
-    { number: 4, label: 'Go Live' }
+    { number: 3, label: 'Train Data' },
+    { number: 4, label: 'Review & Test' },
+    { number: 5, label: 'Go Live' }
   ];
 
   return (
@@ -4040,18 +4069,79 @@ function CreationWizard({
             </div>
 
             <div className="wizard-footer-actions">
-              <button className="btn-secondary" onClick={handleBack}>
+              <button className="btn-secondary" onClick={handleBack} disabled={isSubmitting}>
                 &larr; Back
               </button>
-              <button className="btn-primary" onClick={handleNext}>
+              <button className="btn-primary" onClick={handleNext} disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Next \u2192'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: TRAIN DATA (SCRAPE) */}
+        {wizardStep === 3 && (
+          <div className="wizard-step-slide">
+            <h3 style={{ marginBottom: '0.5rem', color: '#fff', fontSize: '1.4rem' }}>Train Knowledge Base</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2rem' }}>
+              Let's give your bot some knowledge. Provide a website URL for it to crawl and learn from.
+            </p>
+
+            <div className="glass-card" style={{ marginBottom: '2rem', padding: '1.5rem' }}>
+              <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Globe size={18} color="var(--primary)" />
+                Scrape Website Data
+              </h3>
+              
+              <form onSubmit={handleWizardCrawl}>
+                <div className="form-group">
+                  <label className="form-label">Website URL</label>
+                  <input 
+                    type="text" 
+                    className="text-input" 
+                    placeholder="e.g. my-restaurant.com/menu"
+                    value={crawlUrl}
+                    onChange={(e) => setCrawlUrl(e.target.value)}
+                    required
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label">Crawl Depth</label>
+                  <select 
+                    className="select-input"
+                    value={crawlDepth}
+                    onChange={(e) => setCrawlDepth(Number(e.target.value))}
+                  >
+                    <option value={0}>Only this single page (Quick)</option>
+                    <option value={1}>Crawl main + internal links (Deep)</option>
+                  </select>
+                </div>
+
+                <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }} disabled={isCrawling || !crawlUrl}>
+                  {isCrawling ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} />
+                      Crawling & Training...
+                    </>
+                  ) : 'Start Crawl'}
+                </button>
+              </form>
+            </div>
+
+            <div className="wizard-footer-actions">
+              <button className="btn-secondary" onClick={handleNext} disabled={isCrawling}>
+                Skip for now
+              </button>
+              <button className="btn-primary" onClick={handleNext} disabled={isCrawling}>
                 Next &rarr;
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 3: REVIEW & TEST */}
-        {wizardStep === 3 && (
+        {/* STEP 4: REVIEW & TEST */}
+        {wizardStep === 4 && (
           <div className="wizard-step-slide">
             <h3 style={{ marginBottom: '0.5rem', color: '#fff', fontSize: '1.4rem' }}>Review & Test</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2.25rem' }}>
@@ -4161,15 +4251,15 @@ function CreationWizard({
               <button className="btn-secondary" onClick={handleBack} disabled={isSubmitting}>
                 &larr; Back
               </button>
-              <button className="btn-primary" onClick={handleSubmitBot} disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Looks good!'}
+              <button className="btn-primary" onClick={() => setWizardStep(5)} disabled={isSubmitting}>
+                Looks good!
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4: GO LIVE */}
-        {wizardStep === 4 && createdBot && (
+        {/* STEP 5: GO LIVE */}
+        {wizardStep === 5 && createdBot && (
           <div className="wizard-step-slide text-center" style={{ textAlign: 'center' }}>
             <div className="success-checkmark-wrapper">
               <div className="success-icon-circle">
