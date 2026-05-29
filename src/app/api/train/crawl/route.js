@@ -49,20 +49,26 @@ async function scrapePage(url) {
     });
     
     // 2. Remove unwanted elements for clean text extraction
-    $('script, style, nav, footer, header, iframe, noscript, svg, [role="banner"], [role="navigation"]').remove();
+    $('script, style, nav, footer, header, iframe, noscript, svg, [role="banner"], [role="navigation"], .site-header, .site-footer, .main-nav, .mobile-nav').remove();
     
     const title = $('title').text().trim() || $('h1').first().text().trim() || 'Untitled Page';
     
-    // Extract headers and paragraphs in order
-    const contentParts = [];
-    $('h1, h2, h3, h4, h5, h6, p, li, table').each((_, el) => {
-      const text = $(el).text().replace(/\s+/g, ' ').trim();
-      if (text.length > 5) {
-        contentParts.push(text);
-      }
+    // Replace <br> with newlines to preserve line breaks
+    $('br').replaceWith('\\n');
+    
+    // Append a newline to block elements to preserve structure
+    $('p, div, h1, h2, h3, h4, h5, h6, li, tr').each((_, el) => {
+      $(el).append('\\n');
     });
     
-    const pageText = contentParts.join('\n\n');
+    // Extract full text from the cleaned body
+    let pageText = $('body').text();
+    
+    // Clean up whitespace: normalize multiple spaces to one, and multiple newlines to double newlines
+    pageText = pageText.replace(/[^\\S\\n]+/g, ' ') // replaces multiple spaces/tabs with single space
+                       .replace(/\\n\\s*\\n/g, '\\n\\n') // normalizes multiple newlines
+                       .trim();
+    
     const uniqueLinks = [...new Set(links)];
     
     return { title, text: pageText, links: uniqueLinks };
@@ -96,8 +102,8 @@ export async function POST(request) {
     const pagesCrawled = [];
     let chunksCount = 0;
     
-    // Limit total pages crawled to 10 to keep execution fast and prevent timeouts
-    const MAX_PAGES = 10;
+    // Limit total pages crawled to 25 to capture more e-commerce products
+    const MAX_PAGES = 25;
     
     while (queue.length > 0 && visited.size < MAX_PAGES) {
       const currentUrl = queue.shift();
