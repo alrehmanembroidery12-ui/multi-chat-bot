@@ -1,32 +1,59 @@
 import { NextResponse } from 'next/server';
-import { getChatbot, saveLead } from '@/lib/db';
+import { getChatbot, saveLead, getProducts } from '@/lib/db';
 import { findRelevantChunks, generateAnswer } from '@/lib/gemini';
 
 export async function POST(request) {
   try {
-    const { chatbotId, message, history = [] } = await request.json();
+    const { chatbotId, message, history = [], tempChatbot } = await request.json();
     
     if (!chatbotId || !message) {
       return NextResponse.json({ error: 'Missing chatbotId or message' }, { status: 400 });
     }
     
-    const chatbot = getChatbot(chatbotId);
-    if (!chatbot) {
-      return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
+    let chatbot;
+    if (chatbotId === 'preview') {
+      if (!tempChatbot) {
+        return NextResponse.json({ error: 'Missing tempChatbot configuration for preview' }, { status: 400 });
+      }
+      chatbot = tempChatbot;
+    } else {
+      chatbot = getChatbot(chatbotId);
+      if (!chatbot) {
+        return NextResponse.json({ error: 'Chatbot not found' }, { status: 404 });
+      }
+      
+      if (chatbot.status === 'paused') {
+        return NextResponse.json({ 
+          success: true, 
+          response: 'This chatbot is currently paused. You can activate it from the dashboard settings.' 
+        });
+      }
     }
     
     // Retrieve context chunks using RAG (cosine similarity search)
     let contextChunks = [];
-    try {
-      contextChunks = await findRelevantChunks(chatbotId, message, 5);
-    } catch (ragError) {
-      console.error('RAG semantic search error, proceeding without context:', ragError);
+    if (chatbotId !== 'preview') {
+      try {
+        contextChunks = await findRelevantChunks(chatbotId, message, 5);
+      } catch (ragError) {
+        console.error('RAG semantic search error, proceeding without context:', ragError);
+      }
     }
     
+    // Load product catalog for this bot
+    let products = [];
+    if (chatbotId !== 'preview') {
+      try {
+        products = getProducts(chatbotId);
+      } catch (prodError) {
+        console.error('Error loading products:', prodError);
+      }
+    }
+
     // Generate response from Gemini
     let reply = '';
     try {
-      reply = await generateAnswer(chatbot, history, contextChunks, message);
+      reply = await generateAnswer(chatbot, history, contextChunks, message, products);
     } catch (geminiError) {
       console.error('Gemini generation error:', geminiError);
       return NextResponse.json({ 
@@ -40,17 +67,19 @@ export async function POST(request) {
     if (match) {
       const [, name, contact, details] = match;
       
-      // Save lead to database
-      try {
-        saveLead({
-          chatbotId,
-          name,
-          contact,
-          details,
-          chatHistory: [...history, { role: 'user', content: message }, { role: 'assistant', content: reply.replace(leadRegex, '').trim() }]
-        });
-      } catch (dbError) {
-        console.error('Error saving lead to database:', dbError);
+      // Save lead to database if not in preview mode
+      if (chatbotId !== 'preview') {
+        try {
+          saveLead({
+            chatbotId,
+            name,
+            contact,
+            details,
+            chatHistory: [...history, { role: 'user', content: message }, { role: 'assistant', content: reply.replace(leadRegex, '').trim() }]
+          });
+        } catch (dbError) {
+          console.error('Error saving lead to database:', dbError);
+        }
       }
       
       // Strip the tag from the reply

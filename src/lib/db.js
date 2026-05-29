@@ -72,6 +72,9 @@ export function deleteChatbot(id) {
   // Filter out chatbot's chunks
   db.chunks = db.chunks.filter((c) => c.chatbotId !== id);
   
+  // Filter out chatbot's products
+  if (db.products) db.products = db.products.filter((p) => p.chatbotId !== id);
+
   writeDb(db);
 }
 
@@ -122,9 +125,14 @@ export function saveSettings(settings) {
 }
 
 // Leads Queries
+export function getAllLeads() {
+  return readDb().leads || [];
+}
+
 export function getLeads(chatbotId) {
   return (readDb().leads || []).filter((l) => l.chatbotId === chatbotId);
 }
+
 
 export function saveLead(lead) {
   const db = readDb();
@@ -148,3 +156,33 @@ export function deleteLead(id) {
   }
 }
 
+// Products Queries
+export function getProducts(chatbotId) {
+  return (readDb().products || []).filter((p) => p.chatbotId === chatbotId);
+}
+
+export function saveProduct(product) {
+  const db = readDb();
+  if (!db.products) db.products = [];
+  const index = db.products.findIndex((p) => p.id === product.id);
+  
+  if (index > -1) {
+    db.products[index] = { ...db.products[index], ...product };
+  } else {
+    db.products.push({
+      ...product,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  
+  writeDb(db);
+  return product;
+}
+
+export function deleteProduct(id) {
+  const db = readDb();
+  if (db.products) {
+    db.products = db.products.filter((p) => p.id !== id);
+    writeDb(db);
+  }
+}

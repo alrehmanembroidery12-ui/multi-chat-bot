@@ -82,6 +82,7 @@ export async function POST(request) {
       welcomeMessage: welcomeMessage || 'Hello! How can I help you today?',
       themeColor: themeColor || '#4f46e5',
       whatsappNumber: whatsappNumber || '',
+      status: 'active',
     };
     
     saveChatbot(newChatbot);

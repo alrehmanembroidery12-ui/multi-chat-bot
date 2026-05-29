@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getLeads, deleteLead } from '@/lib/db';
+import { getLeads, deleteLead, getAllLeads } from '@/lib/db';
 
 export async function GET(request) {
   try {
@@ -7,7 +7,8 @@ export async function GET(request) {
     const chatbotId = searchParams.get('chatbotId');
     
     if (!chatbotId) {
-      return NextResponse.json({ error: 'Missing chatbotId' }, { status: 400 });
+      const leads = getAllLeads();
+      return NextResponse.json({ success: true, leads });
     }
     
     const leads = getLeads(chatbotId);

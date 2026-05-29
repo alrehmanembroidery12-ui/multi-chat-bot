@@ -19,8 +19,44 @@
   let chatbotConfig = null;
   let chatHistory = [];
   let isWidgetOpen = false;
-  let isInitialized = false;
   let isRequestPending = false;
+  let sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  function logWhatsAppClick() {
+    try {
+      const rawClicks = localStorage.getItem('agentflow_whatsapp_clicks');
+      const clicks = rawClicks ? JSON.parse(rawClicks) : [];
+      clicks.push({
+        botId: chatbotId,
+        timestamp: new Date().toISOString()
+      });
+      localStorage.setItem('agentflow_whatsapp_clicks', JSON.stringify(clicks));
+    } catch (e) {
+      console.error('Failed to log WhatsApp click in widget:', e);
+    }
+  }
+
+  function logMessageToAnalytics(userMsgText, botMsgText, elapsedSec) {
+    try {
+      const rawData = localStorage.getItem('agentflow_analytics');
+      const analytics = rawData ? JSON.parse(rawData) : [];
+      
+      const newLog = {
+        botId: chatbotId,
+        botName: chatbotConfig ? chatbotConfig.name : 'Assistant',
+        timestamp: new Date().toISOString(),
+        userMessage: userMsgText,
+        botResponse: botMsgText,
+        sessionId: sessionId,
+        responseTime: parseFloat(elapsedSec.toFixed(2))
+      };
+      
+      analytics.push(newLog);
+      localStorage.setItem('agentflow_analytics', JSON.stringify(analytics));
+    } catch (e) {
+      console.error('Failed to log message to analytics in widget:', e);
+    }
+  }
 
   // Inject Fonts and FontAwesome or SVG styles
   const fontLink = document.createElement('link');
@@ -35,6 +71,7 @@
   let messagesList = null;
   let chatInput = null;
   let chatForm = null;
+  let chatBadge = null;
 
   // Inject Styles
   const styleTag = document.createElement('style');
@@ -71,45 +108,85 @@
       border: none;
       outline: none;
       padding: 0;
-      overflow: hidden;
+      position: relative;
     }
     .af-chat-bubble:hover {
       transform: scale(1.08);
       box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
     }
+    
+    /* SVG Transition Icons inside Bubble */
     .af-chat-bubble svg {
+      position: absolute;
       width: 26px;
       height: 26px;
       fill: #ffffff;
-      transition: transform 0.3s ease;
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
     }
-    .af-chat-bubble.open svg {
-      transform: rotate(90deg);
+    .af-chat-bubble .af-icon-close {
+      opacity: 0;
+      transform: rotate(-90deg) scale(0.5);
+    }
+    .af-chat-bubble .af-icon-chat {
+      opacity: 1;
+      transform: rotate(0) scale(1);
+    }
+    .af-chat-bubble.open .af-icon-chat {
+      opacity: 0;
+      transform: rotate(90deg) scale(0.5);
+    }
+    .af-chat-bubble.open .af-icon-close {
+      opacity: 1;
+      transform: rotate(0) scale(1);
     }
 
-    /* Chat Panel */
+    /* Unread Badge */
+    .af-chat-badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #ef4444;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #121218;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+      z-index: 10;
+      animation: afBadgePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    /* Chat Panel - dimensions updated to 350x500px and smooth transition visibility */
     .af-chat-panel {
-      width: 380px;
-      height: 520px;
+      width: 350px;
+      height: 500px;
       border-radius: 16px;
       background: rgba(18, 18, 24, 0.95);
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
       margin-bottom: 16px;
-      display: none;
+      display: flex;
       flex-direction: column;
       overflow: hidden;
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      transform: translateY(20px);
+      transform: translateY(20px) scale(0.95);
       opacity: 0;
-      transition: transform 0.3s ease, opacity 0.3s ease;
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease, visibility 0.25s ease;
     }
     
     .af-chat-panel.active {
-      display: flex;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
       opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
     }
 
     /* Header */
@@ -129,13 +206,14 @@
     .af-chat-header-avatar {
       width: 36px;
       height: 36px;
-      border-radius: 10px;
+      border-radius: 50%;
       background: rgba(255, 255, 255, 0.2);
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 700;
       font-size: 14px;
+      text-transform: uppercase;
     }
     .af-chat-header-name {
       font-weight: 600;
@@ -176,27 +254,30 @@
       gap: 12px;
     }
     
+    .af-message-wrapper {
+      display: flex;
+      flex-direction: column;
+    }
+
     .af-message {
-      max-width: 82%;
       padding: 10px 14px;
       border-radius: 12px;
       font-size: 13.5px;
       line-height: 1.45;
       white-space: pre-wrap;
-      animation: afFadeIn 0.25s ease forwards;
     }
     
+    /* User messages are neutral dark */
     .af-message.user {
-      align-self: flex-end;
+      background: rgba(255, 255, 255, 0.06);
       color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-bottom-right-radius: 2px;
     }
     
+    /* Bot messages are colored by theme color */
     .af-message.bot {
-      align-self: flex-start;
-      background: rgba(255, 255, 255, 0.05);
-      color: #e4e4e7;
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: #ffffff;
       border-bottom-left-radius: 2px;
     }
 
@@ -210,7 +291,7 @@
     .af-dot {
       width: 6px;
       height: 6px;
-      background: #a1a1aa;
+      background: #ffffff;
       border-radius: 50%;
       animation: afBounce 0.6s infinite alternate;
     }
@@ -288,6 +369,10 @@
       from { transform: translateY(0); }
       to { transform: translateY(-4px); }
     }
+    @keyframes afBadgePop {
+      from { transform: scale(0); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
     
     /* Responsive details */
     @media (max-width: 480px) {
@@ -358,11 +443,16 @@
     // Message List Container
     messagesList = document.createElement('div');
     messagesList.className = 'af-chat-messages';
+    messagesList.onclick = function(e) {
+      const anchor = e.target.closest('a');
+      if (anchor && anchor.href.includes('wa.me')) {
+        logWhatsAppClick();
+      }
+    };
     chatPanel.appendChild(messagesList);
     
     // Input Area Content
     const inputContainer = document.createElement('div');
-    inputContainer.className = 'af-widget-root-footer'; // wrap footer
     inputContainer.className = 'af-chat-input-container';
     
     chatForm = document.createElement('form');
@@ -390,11 +480,24 @@
     
     chatPanel.appendChild(inputContainer);
     
-    // 2. Create Bubble
+    // 2. Create Bubble with smooth transitions (SVG chat icon instead of PNG support agent)
     chatBubble = document.createElement('button');
     chatBubble.className = 'af-chat-bubble';
-    chatBubble.innerHTML = `<img src="${serverUrl}/support_agent.png" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;" />`;
+    chatBubble.innerHTML = `
+      <svg class="af-icon-chat" viewBox="0 0 24 24">
+        <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+      </svg>
+      <svg class="af-icon-close" viewBox="0 0 24 24">
+        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+      </svg>
+    `;
     chatBubble.onclick = toggleWidget;
+    
+    // Create Unread Badge displaying "1"
+    chatBadge = document.createElement('div');
+    chatBadge.className = 'af-chat-badge';
+    chatBadge.textContent = '1';
+    chatBubble.appendChild(chatBadge);
     
     // Assemble DOM elements
     widgetContainer.appendChild(chatPanel);
@@ -406,24 +509,68 @@
   async function toggleWidget() {
     isWidgetOpen = !isWidgetOpen;
     
+    // Remove the unread badge immediately on first open
+    if (chatBadge) {
+      chatBadge.remove();
+      chatBadge = null;
+    }
+    
     if (isWidgetOpen) {
       chatBubble.classList.add('open');
-      chatBubble.innerHTML = '<svg viewBox="0 0 24 24" style="width: 24px; height: 24px; fill: #ffffff;"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
       chatPanel.classList.add('active');
       chatInput.focus();
-      
-      // Load configurations on first open
-      if (!isInitialized) {
-        await initChatbot();
-      }
     } else {
       chatBubble.classList.remove('open');
-      chatBubble.innerHTML = `<img src="${serverUrl}/support_agent.png" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;" />`;
       chatPanel.classList.remove('active');
     }
   }
 
-  // Fetch configs and set colors/themes
+  // Load configuration from Cache instantly
+  function applyCachedConfig() {
+    const cached = localStorage.getItem('bot_config_' + chatbotId);
+    if (cached) {
+      try {
+        chatbotConfig = JSON.parse(cached);
+        applyConfigToUi(chatbotConfig);
+      } catch (e) {
+        console.error('Failed to parse cached configuration:', e);
+      }
+    }
+  }
+
+  // Update DOM styles and texts from configuration object
+  function applyConfigToUi(config) {
+    const color = config.themeColor || '#6366f1';
+    chatBubble.style.backgroundColor = color;
+    
+    const header = chatPanel.querySelector('.af-chat-header');
+    if (header) header.style.backgroundColor = color;
+    
+    const submitBtn = chatPanel.querySelector('.af-chat-submit');
+    if (submitBtn) submitBtn.style.backgroundColor = color;
+    
+    if (chatInput) chatInput.style.accentColor = color;
+    
+    // Update header details
+    const nameEl = chatPanel.querySelector('.af-chat-header-name');
+    if (nameEl) nameEl.textContent = config.name;
+    
+    const statusEl = chatPanel.querySelector('.af-chat-header-status');
+    if (statusEl) statusEl.textContent = config.role ? config.role.replace('_', ' ') : 'Online';
+    
+    const avatarEl = chatPanel.querySelector('.af-chat-header-avatar');
+    if (avatarEl) {
+      avatarEl.textContent = config.name ? config.name.charAt(0).toUpperCase() : 'A';
+      avatarEl.style.backgroundColor = 'rgba(255,255,255,0.2)';
+    }
+
+    // Populate welcome message if list is empty
+    if (messagesList && messagesList.children.length === 0) {
+      appendMessage('bot', config.welcomeMessage || 'Hello! How can I help you today?');
+    }
+  }
+
+  // Fetch configs and save to Cache
   async function initChatbot() {
     try {
       const res = await fetch(`${serverUrl}/api/chatbots?id=${chatbotId}`);
@@ -432,26 +579,18 @@
       if (data && data.chatbot) {
         chatbotConfig = data.chatbot;
         
-        // Apply theme color settings
-        const color = chatbotConfig.themeColor || '#6366f1';
-        chatBubble.style.backgroundColor = color;
-        chatPanel.querySelector('.af-chat-header').style.backgroundColor = color;
-        chatPanel.querySelector('.af-chat-submit').style.backgroundColor = color;
-        chatInput.style.accentColor = color;
+        // Save to cache
+        localStorage.setItem('bot_config_' + chatbotId, JSON.stringify(chatbotConfig));
         
-        // Update header details
-        chatPanel.querySelector('.af-chat-header-name').textContent = chatbotConfig.name;
-        chatPanel.querySelector('.af-chat-header-status').textContent = chatbotConfig.role.replace('_', ' ');
-        chatPanel.querySelector('.af-chat-header-avatar').textContent = chatbotConfig.name.charAt(0).toUpperCase();
-        chatPanel.querySelector('.af-chat-header-avatar').style.backgroundColor = 'rgba(255,255,255,0.2)';
-        
-        // Push initial welcome message
-        appendMessage('bot', chatbotConfig.welcomeMessage || 'Hello! How can I help you today?');
-        isInitialized = true;
+        // Apply updated settings to UI
+        applyConfigToUi(chatbotConfig);
       }
     } catch (e) {
       console.error('AgentFlow Widget: failed to fetch configuration:', e);
-      appendMessage('bot', 'Error initializing agent. Please check connectivity.');
+      // Fallback message if not even loaded from cache
+      if (!chatbotConfig && messagesList && messagesList.children.length === 0) {
+        appendMessage('bot', 'Error initializing agent. Please check connectivity.');
+      }
     }
   }
 
@@ -464,7 +603,6 @@
     
     // Reset inputs
     chatInput.value = '';
-    chatInput.focus();
     
     // Add user message to screen and list history
     appendMessage('user', queryText);
@@ -475,6 +613,7 @@
     const typingIndicator = appendTypingIndicator();
     isRequestPending = true;
     
+    const startTime = Date.now();
     try {
       const res = await fetch(`${serverUrl}/api/chat`, {
         method: 'POST',
@@ -490,35 +629,66 @@
       typingIndicator.remove();
       
       const data = await res.json();
+      const elapsedSec = (Date.now() - startTime) / 1000;
       
       if (data && data.success) {
         appendMessage('bot', data.response);
         chatHistory.push({ role: 'assistant', content: data.response });
+        logMessageToAnalytics(queryText, data.response, elapsedSec);
       } else {
-        appendMessage('bot', data.error || 'Sorry, I encountered an issue processing your request.');
+        const errMsg = data.error || 'Sorry, I encountered an issue processing your request.';
+        appendMessage('bot', errMsg);
+        logMessageToAnalytics(queryText, errMsg, elapsedSec);
       }
     } catch (err) {
-      typingIndicator.remove();
-      appendMessage('bot', 'Network connection issue. Please try again.');
+      if (typingIndicator) typingIndicator.remove();
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      const errMsg = 'Network connection issue. Please try again.';
+      appendMessage('bot', errMsg);
+      logMessageToAnalytics(queryText, errMsg, elapsedSec);
     } finally {
       isRequestPending = false;
       chatInput.focus();
     }
   }
 
-  // Append message elements to UI
+  // Append message elements to UI with wrappers and timestamps
   function appendMessage(role, text) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'af-message-wrapper';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.maxWidth = '82%';
+    wrapper.style.alignSelf = role === 'user' ? 'flex-end' : 'flex-start';
+    wrapper.style.alignItems = role === 'user' ? 'flex-end' : 'flex-start';
+    wrapper.style.animation = 'afFadeIn 0.25s ease forwards';
+
     const bubble = document.createElement('div');
     bubble.className = `af-message ${role}`;
     
-    // Highlight colors for user bubble
-    if (role === 'user' && chatbotConfig) {
-      bubble.style.backgroundColor = chatbotConfig.themeColor || '#6366f1';
+    // Highlight colors for bot bubble
+    if (role === 'bot') {
+      const color = chatbotConfig ? (chatbotConfig.themeColor || '#6366f1') : '#6366f1';
+      bubble.style.backgroundColor = color;
     }
     
     // Convert newlines to breaks
     bubble.innerHTML = text.replace(/\n/g, '<br>');
-    messagesList.appendChild(bubble);
+    wrapper.appendChild(bubble);
+
+    // Create timestamp
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'af-message-time';
+    timeSpan.style.fontSize = '10px';
+    timeSpan.style.color = 'rgba(255, 255, 255, 0.4)';
+    timeSpan.style.marginTop = '4px';
+    timeSpan.style.padding = '0 4px';
+    
+    const now = new Date();
+    timeSpan.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    wrapper.appendChild(timeSpan);
+    
+    messagesList.appendChild(wrapper);
     
     // Scroll list to bottom
     messagesList.scrollTop = messagesList.scrollHeight;
@@ -528,6 +698,10 @@
   function appendTypingIndicator() {
     const bubble = document.createElement('div');
     bubble.className = 'af-message bot';
+    const color = chatbotConfig ? (chatbotConfig.themeColor || '#6366f1') : '#6366f1';
+    bubble.style.backgroundColor = color;
+    bubble.style.alignSelf = 'flex-start';
+    bubble.style.maxWidth = '82%';
     
     const indicator = document.createElement('div');
     indicator.className = 'af-typing-indicator';
@@ -540,10 +714,16 @@
     return bubble;
   }
 
-  // Execute DOM loading
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  // Execute DOM loading and configuration fetch
+  function initializeWidget() {
     createWidgetDom();
+    applyCachedConfig();
+    initChatbot(); // Fetch latest config in the background and update Cache
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initializeWidget();
   } else {
-    document.addEventListener('DOMContentLoaded', createWidgetDom);
+    document.addEventListener('DOMContentLoaded', initializeWidget);
   }
 })();

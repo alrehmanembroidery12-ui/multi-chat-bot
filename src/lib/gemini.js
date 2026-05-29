@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { getSettings, getChunks } from './db';
+import { getSettings, getChunks, getProducts } from './db';
 
 // Helper to get client
 export function getGeminiClient() {
@@ -133,7 +133,7 @@ export async function findRelevantChunks(chatbotId, queryText, limit = 15) {
 }
 
 // RAG Chat Generation
-export async function generateAnswer(chatbot, history, contextChunks, userQuery) {
+export async function generateAnswer(chatbot, history, contextChunks, userQuery, products = []) {
   const ai = getGeminiClient();
   
   // Compile retrieved context
@@ -150,6 +150,14 @@ Here is the training/contextual data retrieved from the website and/or uploaded 
 === START OF CONTEXT ===
 ${contextText || "No context data is available for this chatbot. Please rely on your general knowledge if the user asks general questions."}
 === END OF CONTEXT ===
+
+${products && products.length > 0 ? `
+Here is the PRODUCT CATALOG for this business. Use this to answer product-related queries (pricing, availability, descriptions, variants):
+=== PRODUCT CATALOG ===
+${products.map((p, i) => `${i + 1}. ${p.name} — Rs. ${Number(p.price).toLocaleString()} ${p.category ? `| Category: ${p.category}` : ''} ${p.variants ? `| Sizes/Variants: ${p.variants}` : ''} | ${p.inStock ? 'In Stock ✓' : 'Out of Stock ✗'}
+   ${p.description || ''}`).join('\n')}
+=== END OF PRODUCT CATALOG ===
+` : ''}
 
 Instructions for your responses:
 1. LANGUAGE & SCRIPT CONSISTENCY (CRITICAL): You MUST reply in the exact same language and script as the user's message.
