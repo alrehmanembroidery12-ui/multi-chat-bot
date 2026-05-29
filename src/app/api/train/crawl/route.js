@@ -71,6 +71,51 @@ async function scrapePage(url) {
     
     const uniqueLinks = [...new Set(links)];
     
+    // -- Shopify E-commerce Extraction Enhancement --
+    // If this is a product page, attempt to fetch the Shopify .js endpoint for pure data
+    if (url.includes('/products/')) {
+      try {
+        const cleanUrl = url.split('?')[0].split('#')[0];
+        const jsonUrl = cleanUrl.endsWith('.js') ? cleanUrl : cleanUrl + '.js';
+        
+        const jsonResponse = await fetch(jsonUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        });
+        
+        if (jsonResponse.ok) {
+          const productData = await jsonResponse.json();
+          if (productData && productData.title) {
+            // Strip HTML from the JSON description but preserve line breaks
+            const $desc = cheerio.load(productData.description || '');
+            $desc('br').replaceWith('\\n');
+            $desc('p, div, h1, h2, h3, h4, h5, h6, li, tr').each((_, el) => {
+              $desc(el).append('\\n');
+            });
+            let pureDescription = $desc.text().replace(/[^\\S\\n]+/g, ' ').replace(/\\n\\s*\\n/g, '\\n\\n').trim();
+            
+            // Format price (Shopify usually returns price in cents, e.g., 850000 -> 8500.00)
+            const formattedPrice = productData.price ? (productData.price / 100).toFixed(2) : 'N/A';
+            
+            // Build a highly structured knowledge chunk
+            const structuredProductData = `
+PRODUCT NAME: ${productData.title}
+PRICE: Rs. ${formattedPrice}
+TAGS: ${(productData.tags || []).join(', ')}
+VENDOR: ${productData.vendor || 'N/A'}
+
+PRODUCT DETAILS:
+${pureDescription}
+            `.trim();
+            
+            // Prepend it to the pageText so it gets maximum priority
+            pageText = structuredProductData + '\\n\\n--- OTHER PAGE CONTENT ---\\n\\n' + pageText;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to extract Shopify JSON for:', url, e.message);
+      }
+    }
+
     return { title, text: pageText, links: uniqueLinks };
   } catch (error) {
     console.error(`Error scraping ${url}:`, error);
