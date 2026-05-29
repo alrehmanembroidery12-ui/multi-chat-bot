@@ -151,7 +151,7 @@ export default function Dashboard() {
   
   // Training Inputs
   const [crawlUrl, setCrawlUrl] = useState('');
-  const [crawlDepth, setCrawlDepth] = useState(1);
+  const [crawlLimit, setCrawlLimit] = useState(5000);
   const [pdfFile, setPdfFile] = useState(null);
   const fileInputRef = useRef(null);
   
@@ -1150,7 +1150,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           chatbotId: selectedBot.id,
           url: crawlUrl,
-          depth: crawlDepth
+          maxPages: crawlLimit
         })
       });
       const data = await res.json();
@@ -2134,14 +2134,16 @@ export default function Dashboard() {
                       </div>
                       
                       <div className="form-group">
-                        <label className="form-label">Crawl Depth</label>
+                        <label className="form-label">Crawl Limit</label>
                         <select 
                           className="select-input"
-                          value={crawlDepth}
-                          onChange={(e) => setCrawlDepth(Number(e.target.value))}
+                          value={crawlLimit}
+                          onChange={(e) => setCrawlLimit(Number(e.target.value))}
                         >
-                          <option value={0}>Only this single page (Quick)</option>
-                          <option value={1}>Crawl main + internal links (Deep)</option>
+                          <option value={1}>Only this single page (Quick)</option>
+                          <option value={50}>Up to 50 pages (Small Site)</option>
+                          <option value={500}>Up to 500 pages (Medium Site)</option>
+                          <option value={5000}>Entire Website (Unlimited - Takes longer)</option>
                         </select>
                       </div>
 
@@ -3579,7 +3581,7 @@ function CreationWizard({
   const [wizardApiKey, setWizardApiKey] = useState('');
   const [isSavingApi, setIsSavingApi] = useState(false);
   const [crawlUrl, setCrawlUrl] = useState('');
-  const [crawlDepth, setCrawlDepth] = useState(1);
+  const [crawlLimit, setCrawlLimit] = useState(5000);
   const [isCrawling, setIsCrawling] = useState(false);
   const chatEndRef = useRef(null);
 
@@ -3769,7 +3771,7 @@ function CreationWizard({
       const res = await fetch('/api/train/crawl', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatbotId: createdBot.id, url: crawlUrl, maxPages: crawlDepth === 0 ? 1 : 10 })
+        body: JSON.stringify({ chatbotId: createdBot.id, url: crawlUrl, maxPages: crawlLimit })
       });
       
       const data = await res.json();
@@ -4107,14 +4109,16 @@ function CreationWizard({
                 </div>
                 
                 <div className="form-group">
-                  <label className="form-label">Crawl Depth</label>
+                  <label className="form-label">Crawl Limit</label>
                   <select 
                     className="select-input"
-                    value={crawlDepth}
-                    onChange={(e) => setCrawlDepth(Number(e.target.value))}
+                    value={crawlLimit}
+                    onChange={(e) => setCrawlLimit(Number(e.target.value))}
                   >
-                    <option value={0}>Only this single page (Quick)</option>
-                    <option value={1}>Crawl main + internal links (Deep)</option>
+                    <option value={1}>Only this single page (Quick)</option>
+                    <option value={50}>Up to 50 pages (Small Site)</option>
+                    <option value={500}>Up to 500 pages (Medium Site)</option>
+                    <option value={5000}>Entire Website (Unlimited - Takes longer)</option>
                   </select>
                 </div>
 

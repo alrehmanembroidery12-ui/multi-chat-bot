@@ -80,7 +80,7 @@ async function scrapePage(url) {
 
 export async function POST(request) {
   try {
-    const { chatbotId, url, depth = 1 } = await request.json();
+    const { chatbotId, url, maxPages = 5000 } = await request.json();
     
     if (!chatbotId || !url) {
       return NextResponse.json({ error: 'Missing chatbotId or url' }, { status: 400 });
@@ -102,8 +102,7 @@ export async function POST(request) {
     const pagesCrawled = [];
     let chunksCount = 0;
     
-    // Limit total pages crawled to 25 to capture more e-commerce products
-    const MAX_PAGES = 25;
+    const MAX_PAGES = maxPages;
     
     while (queue.length > 0 && visited.size < MAX_PAGES) {
       const currentUrl = queue.shift();
@@ -155,8 +154,8 @@ export async function POST(request) {
           saveChunks(dbChunks);
         }
         
-        // Add new links to queue if depth allows
-        if (depth > 0 && visited.size < MAX_PAGES) {
+        // Add new links to queue if we haven't reached the limit
+        if (maxPages > 1 && visited.size < MAX_PAGES) {
           for (const link of scraped.links) {
             if (!visited.has(link) && !queue.includes(link)) {
               queue.push(link);
