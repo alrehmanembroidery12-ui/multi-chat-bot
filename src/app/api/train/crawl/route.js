@@ -87,11 +87,11 @@ async function scrapePage(url) {
           if (productData && productData.title) {
             // Strip HTML from the JSON description but preserve line breaks
             const $desc = cheerio.load(productData.description || '');
-            $desc('br').replaceWith('\\n');
+            $desc('br').replaceWith('\n');
             $desc('p, div, h1, h2, h3, h4, h5, h6, li, tr').each((_, el) => {
-              $desc(el).append('\\n');
+              $desc(el).append('\n');
             });
-            let pureDescription = $desc.text().replace(/[^\\S\\n]+/g, ' ').replace(/\\n\\s*\\n/g, '\\n\\n').trim();
+            let pureDescription = $desc.text().replace(/[^\S\n]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim();
             
             // Format price (Shopify usually returns price in cents, e.g., 850000 -> 8500.00)
             const formattedPrice = productData.price ? (productData.price / 100).toFixed(2) : 'N/A';
@@ -108,7 +108,7 @@ ${pureDescription}
             `.trim();
             
             // Prepend it to the pageText so it gets maximum priority
-            pageText = structuredProductData + '\\n\\n--- OTHER PAGE CONTENT ---\\n\\n' + pageText;
+            pageText = structuredProductData + '\n\n--- OTHER PAGE CONTENT ---\n\n' + pageText;
           }
         }
       } catch (e) {
