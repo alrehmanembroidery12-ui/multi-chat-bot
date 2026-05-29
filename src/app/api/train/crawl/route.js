@@ -97,86 +97,109 @@ export async function POST(request) {
       targetUrl = 'https://' + targetUrl;
     }
     
-    const queue = [targetUrl];
-    const visited = new Set();
-    const pagesCrawled = [];
-    let chunksCount = 0;
-    
-    const MAX_PAGES = maxPages;
-    
-    while (queue.length > 0 && visited.size < MAX_PAGES) {
-      const currentUrl = queue.shift();
-      
-      if (visited.has(currentUrl)) continue;
-      visited.add(currentUrl);
-      
-      console.log(`Scraping page: ${currentUrl}`);
-      const scraped = await scrapePage(currentUrl);
-      
-      if (scraped && scraped.text.length > 50) {
-        pagesCrawled.push({ url: currentUrl, title: scraped.title });
-        
-        // Check if this URL was already crawled for this bot, if so, delete the old document to prevent duplicate/outdated chunks
-        const existingDocs = getDocuments(chatbotId);
-        const duplicateDoc = existingDocs.find(d => d.source === currentUrl);
-        if (duplicateDoc) {
-          deleteDocument(duplicateDoc.id);
-        }
+    const encoder = new TextEncoder();
 
-        // Save the new document metadata
-        const documentId = 'doc_' + generateId();
-        saveDocument({
-          id: documentId,
-          chatbotId,
-          type: 'url',
-          source: currentUrl,
-          title: scraped.title,
-        });
+    const stream = new ReadableStream({
+      async start(controller) {
+        const queue = [targetUrl];
+        const visited = new Set();
+        const pagesCrawled = [];
+        let chunksCount = 0;
         
-        // Chunk the page text
-        const textChunks = chunkText(scraped.text, 800, 150);
+        const MAX_PAGES = maxPages;
         
-        // Generate embeddings and save chunks
-        const dbChunks = [];
-        for (let i = 0; i < textChunks.length; i++) {
-          const chunkTextStr = `Page: ${scraped.title}\nURL: ${currentUrl}\nContent:\n${textChunks[i]}`;
-          try {
-            const embedding = await getEmbedding(chunkTextStr);
-            dbChunks.push({
-              id: 'chunk_' + generateId(),
-              chatbotId,
-              documentId,
-              text: chunkTextStr,
-              embedding,
-            });
-            chunksCount++;
-            // Tiny delay to respect API limits
-            await new Promise(r => setTimeout(r, 100));
-          } catch (embedError) {
-            console.error(`Failed to generate embedding for chunk ${i} on page ${currentUrl}:`, embedError);
-          }
-        }
-        
-        if (dbChunks.length > 0) {
-          saveChunks(dbChunks);
-        }
-        
-        // Add new links to queue if we haven't reached the limit
-        if (maxPages > 1 && visited.size < MAX_PAGES) {
-          for (const link of scraped.links) {
-            if (!visited.has(link) && !queue.includes(link)) {
-              queue.push(link);
+        try {
+          while (queue.length > 0 && visited.size < MAX_PAGES) {
+            const currentUrl = queue.shift();
+            
+            if (visited.has(currentUrl)) continue;
+            visited.add(currentUrl);
+
+            // SEND PROGRESS UPDATE
+            controller.enqueue(encoder.encode(JSON.stringify({ 
+              progress: true, 
+              currentUrl, 
+              crawled: visited.size, 
+              discovered: queue.length + visited.size 
+            }) + '\\n'));
+            
+            console.log(`Scraping page: ${currentUrl}`);
+            const scraped = await scrapePage(currentUrl);
+            
+            if (scraped && scraped.text.length > 50) {
+              pagesCrawled.push({ url: currentUrl, title: scraped.title });
+              
+              const existingDocs = getDocuments(chatbotId);
+              const duplicateDoc = existingDocs.find(d => d.source === currentUrl);
+              if (duplicateDoc) {
+                deleteDocument(duplicateDoc.id);
+              }
+
+              const documentId = 'doc_' + generateId();
+              saveDocument({
+                id: documentId,
+                chatbotId,
+                type: 'url',
+                source: currentUrl,
+                title: scraped.title,
+              });
+              
+              const textChunks = chunkText(scraped.text, 800, 150);
+              
+              const dbChunks = [];
+              for (let i = 0; i < textChunks.length; i++) {
+                const chunkTextStr = `Page: ${scraped.title}\\nURL: ${currentUrl}\\nContent:\\n${textChunks[i]}`;
+                try {
+                  const embedding = await getEmbedding(chunkTextStr);
+                  dbChunks.push({
+                    id: 'chunk_' + generateId(),
+                    chatbotId,
+                    documentId,
+                    text: chunkTextStr,
+                    embedding,
+                  });
+                  chunksCount++;
+                  await new Promise(r => setTimeout(r, 100));
+                } catch (embedError) {
+                  console.error(`Failed to generate embedding for chunk ${i} on page ${currentUrl}:`, embedError);
+                }
+              }
+              
+              if (dbChunks.length > 0) {
+                saveChunks(dbChunks);
+              }
+              
+              if (maxPages > 1 && visited.size < MAX_PAGES) {
+                for (const link of scraped.links) {
+                  if (!visited.has(link) && !queue.includes(link)) {
+                    queue.push(link);
+                  }
+                }
+              }
             }
           }
+          
+          controller.enqueue(encoder.encode(JSON.stringify({
+            success: true,
+            pagesCrawled,
+            chunksCount,
+          }) + '\\n'));
+          controller.close();
+        } catch (err) {
+          controller.enqueue(encoder.encode(JSON.stringify({ error: err.message || 'Error during crawl' }) + '\\n'));
+          controller.close();
         }
       }
-    }
-    
-    return NextResponse.json({
-      success: true,
-      pagesCrawled,
-      chunksCount,
     });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+
   } catch (error) {
     console.error('Crawl handler error:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

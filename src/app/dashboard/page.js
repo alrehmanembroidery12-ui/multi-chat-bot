@@ -152,6 +152,7 @@ export default function Dashboard() {
   // Training Inputs
   const [crawlUrl, setCrawlUrl] = useState('');
   const [crawlLimit, setCrawlLimit] = useState(5000);
+  const [crawlProgress, setCrawlProgress] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
   const fileInputRef = useRef(null);
   
@@ -1143,6 +1144,8 @@ export default function Dashboard() {
     if (!crawlUrl) return;
     
     setIsCrawling(true);
+    setCrawlProgress({ crawled: 0, discovered: 1, currentUrl: crawlUrl });
+
     try {
       const res = await fetch('/api/train/crawl', {
         method: 'POST',
@@ -1153,23 +1156,46 @@ export default function Dashboard() {
           maxPages: crawlLimit
         })
       });
-      const data = await res.json();
-      if (data.success) {
-        showNotification('success', `Scraped & trained ${data.pagesCrawled.length} pages. Created ${data.chunksCount} memory blocks.`);
-        setCrawlUrl('');
-        // Reload documents list
-        const docRes = await fetch(`/api/chatbots?id=${selectedBot.id}`);
-        const docData = await docRes.json();
-        if (docData.documents) {
-          setDocuments(docData.documents);
+      
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\\n').filter(Boolean);
+        
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.progress) {
+              setCrawlProgress({
+                crawled: data.crawled,
+                discovered: data.discovered,
+                currentUrl: data.currentUrl
+              });
+            } else if (data.success) {
+              showNotification('success', `Scraped & trained ${data.pagesCrawled.length} pages. Created ${data.chunksCount} memory blocks.`);
+              setCrawlUrl('');
+              // Reload documents list
+              const docRes = await fetch(`/api/chatbots?id=${selectedBot.id}`);
+              const docData = await docRes.json();
+              if (docData.documents) {
+                setDocuments(docData.documents);
+              }
+            } else if (data.error) {
+              showNotification('error', data.error || 'Scraping failed');
+            }
+          } catch(e) {}
         }
-      } else {
-        showNotification('error', data.error || 'Scraping failed');
       }
     } catch (err) {
       showNotification('error', 'Network error during scraping');
     } finally {
       setIsCrawling(false);
+      setCrawlProgress(null);
     }
   };
 
@@ -3765,7 +3791,8 @@ function CreationWizard({
     }
 
     setIsCrawling(true);
-    showNotification('info', 'Starting website crawl. This may take a minute...');
+    setCrawlProgress({ crawled: 0, discovered: 1, currentUrl: crawlUrl });
+    showNotification('info', 'Starting website crawl. This may take a while...');
 
     try {
       const res = await fetch('/api/train/crawl', {
@@ -3774,17 +3801,39 @@ function CreationWizard({
         body: JSON.stringify({ chatbotId: createdBot.id, url: crawlUrl, maxPages: crawlLimit })
       });
       
-      const data = await res.json();
-      if (data.success) {
-        showNotification('success', `Scraped & trained ${data.pagesCrawled.length} pages. Created ${data.chunksCount} memory blocks.`);
-        handleNext(); // Automatically go to Review & Test once done
-      } else {
-        showNotification('error', data.error || 'Failed to crawl website');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\\n').filter(Boolean);
+        
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.progress) {
+              setCrawlProgress({
+                crawled: data.crawled,
+                discovered: data.discovered,
+                currentUrl: data.currentUrl
+              });
+            } else if (data.success) {
+              showNotification('success', `Scraped & trained ${data.pagesCrawled.length} pages.`);
+              handleNext();
+            } else if (data.error) {
+              showNotification('error', data.error || 'Failed to crawl website');
+            }
+          } catch(e) {}
+        }
       }
     } catch (err) {
       showNotification('error', 'Network error during scraping');
     } finally {
       setIsCrawling(false);
+      setCrawlProgress(null);
     }
   };
 
@@ -4130,6 +4179,26 @@ function CreationWizard({
                     </>
                   ) : 'Start Crawl'}
                 </button>
+
+                {isCrawling && crawlProgress && (
+                  <div style={{ marginTop: '1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ccc', marginBottom: '0.5rem' }}>
+                      <span>{crawlProgress.crawled} / {crawlProgress.discovered} pages crawled</span>
+                      <span>{Math.round((crawlProgress.crawled / crawlProgress.discovered) * 100) || 0}%</span>
+                    </div>
+                    <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                      <div style={{ 
+                        width: `${Math.round((crawlProgress.crawled / crawlProgress.discovered) * 100) || 0}%`, 
+                        height: '100%', 
+                        background: 'var(--primary)', 
+                        transition: 'width 0.3s ease' 
+                      }}></div>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Crawling: {crawlProgress.currentUrl}
+                    </div>
+                  </div>
+                )}
               </form>
             </div>
 
