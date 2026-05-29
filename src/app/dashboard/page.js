@@ -3029,8 +3029,10 @@ function TopNavbar({ sidebarOpen, setSidebarOpen, showNotification }) {
         >
           ☰
         </button>
-        <Bot size={24} color="var(--primary)" />
-        <span className="brand-name" style={{ fontSize: '1.25rem' }}>AgentFlow AI</span>
+        <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+          <Bot size={24} color="var(--primary)" />
+          <span className="brand-name" style={{ fontSize: '1.25rem', color: '#fff' }}>AgentFlow AI</span>
+        </a>
       </div>
       <div className="top-navbar-actions">
         <button className="btn-upgrade-pill" onClick={() => showNotification('success', 'Plan upgrade request sent successfully!')}>
