@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-const DB_DIR = path.join(process.cwd(), 'data');
+const isVercel = process.env.VERCEL === '1';
+const DB_DIR = isVercel ? '/tmp/data' : path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
 // Initialize the database file
