@@ -28,7 +28,8 @@ import {
   Clock,
   MessageSquare,
   AlertTriangle,
-  Package
+  Package,
+  Key
 } from 'lucide-react';
 
 const formatMessageText = (text, onLinkClick) => {
@@ -464,7 +465,7 @@ export default function Dashboard() {
   };
 
   const handleLaunchWizard = () => {
-    setWizardStep(1);
+    setWizardStep(settings?.isConfigured ? 1 : 0);
     setSelectedTemplate(null);
     setWizardForm({
       name: '',
@@ -1532,6 +1533,7 @@ export default function Dashboard() {
             fetchChatbots={fetchChatbots}
             showNotification={showNotification}
             settings={settings}
+            setSettings={setSettings}
             logMessageToAnalytics={logMessageToAnalytics}
             handleWhatsAppClick={handleWhatsAppClick}
           />
@@ -3567,13 +3569,41 @@ function CreationWizard({
   fetchChatbots,
   showNotification,
   settings,
+  setSettings,
   logMessageToAnalytics,
   handleWhatsAppClick
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [wizardSessionId, setWizardSessionId] = useState('');
+  const [wizardApiKey, setWizardApiKey] = useState('');
+  const [isSavingApi, setIsSavingApi] = useState(false);
   const chatEndRef = useRef(null);
+
+  const handleSaveWizardApi = async (e) => {
+    e.preventDefault();
+    if (!wizardApiKey.trim()) return;
+    setIsSavingApi(true);
+    try {
+      const res = await fetch('/api/chatbots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'settings', geminiApiKey: wizardApiKey })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification('success', 'API Key configured securely!');
+        setSettings({ geminiApiKey: wizardApiKey, isConfigured: true });
+        setWizardStep(1);
+      } else {
+        showNotification('error', data.error || 'Failed to save API Key.');
+      }
+    } catch (err) {
+      showNotification('error', 'Network error while saving API key.');
+    } finally {
+      setIsSavingApi(false);
+    }
+  };
 
   // Generate wizardSessionId when entering Step 3
   useEffect(() => {
@@ -3773,6 +3803,40 @@ function CreationWizard({
 
       {/* Main Wizard Card */}
       <div className="wizard-card">
+        {/* STEP 0: API KEY SETUP */}
+        {wizardStep === 0 && (
+          <div className="wizard-step-slide text-center" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+            <div style={{ background: 'rgba(99, 102, 241, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+              <Key size={36} color="var(--primary)" />
+            </div>
+            <h3 style={{ marginBottom: '1rem', color: '#fff', fontSize: '1.75rem' }}>Let's Setup Your AI Engine</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', marginBottom: '2.5rem', maxWidth: '500px', margin: '0 auto' }}>
+              To power your chatbots, you need a free Google Gemini API Key. This will be securely stored and used to generate intelligent responses.
+            </p>
+            
+            <form onSubmit={handleSaveWizardApi} style={{ maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
+              <div className="form-group">
+                <label className="form-label">Gemini API Key</label>
+                <input 
+                  type="password" 
+                  className="text-input" 
+                  placeholder="AIzaSy..."
+                  value={wizardApiKey}
+                  onChange={(e) => setWizardApiKey(e.target.value)}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn-primary" style={{ width: '100%', padding: '0.85rem', marginTop: '1rem' }} disabled={isSavingApi || !wizardApiKey.trim()}>
+                {isSavingApi ? <Loader2 size={18} className="animate-spin" /> : 'Save & Continue'}
+              </button>
+            </form>
+            
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2rem' }}>
+              Don't have one? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>Get your free API key here</a>.
+            </p>
+          </div>
+        )}
+
         {/* STEP 1: CHOOSE A TEMPLATE */}
         {wizardStep === 1 && (
           <div className="wizard-step-slide">
